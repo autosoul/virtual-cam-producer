@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 rdkafka = { version = "0.36.0", features = ["cmake-build"] }
 clap = { version = "4.4.10", features = ["derive"] }
-opencv = "0.88.1"
+opencv = "0.88.1" # Installation steps [https://github.com/twistedfall/opencv-rust]
+tokio = { version = "1.34.0", features = ["full"] }
