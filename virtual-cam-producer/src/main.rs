@@ -1,4 +1,3 @@
-use std::time::Duration;
 use clap::Parser;
 use opencv::{
     core,
@@ -9,6 +8,7 @@ use opencv::{
 };
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::util::Timeout;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -41,6 +41,7 @@ async fn main() -> opencv::Result<()>{
     let producer: &FutureProducer = &ClientConfig::new()
         .set("bootstrap.servers", &args.bootstrap_servers)
         .set("message.timeout.ms", "5000")
+        .set("message.max.bytes", "10000000")
         .create()
         .expect("Producer creation error");
 
@@ -59,24 +60,31 @@ async fn main() -> opencv::Result<()>{
 
     println!("Capturing video now...");
 
+    cam.read(&mut frame)?;
+    highgui::imshow(window, &frame)?;
+    let key = highgui::wait_key(1)?;
+
     while cam.is_opened()? {
         cam.read(&mut frame)?;
         highgui::imshow(window, &frame)?;
-
-        // Encode and send to Kafka
-        let encoded_frame = encode(&frame)?;
-        let delivery_result = producer.send(
-            FutureRecord::to(&args.topic)
-                .key(&())
-                .payload(encoded_frame.as_slice()),
-            Duration::from_secs(0)
-        )
-            .await
-            .expect("Failed to send frame to broker");
-
         let key = highgui::wait_key(1)?;
         if key == 113 { // quit with q
             break;
+        }
+
+        // Encode and send to Kafka
+        let encoded_frame = encode(&frame)?;
+        match producer.send(
+            FutureRecord::to(&args.topic)
+                .key(&())
+                .payload(encoded_frame.as_slice()),
+            Timeout::Never
+        )
+            .await {
+            Err((a, _)) => {
+                panic!("Error occurred while publishing frame to Kafka: [{:?}]", a.rdkafka_error_code().unwrap());
+            },
+            _ => {}
         }
     }
     
